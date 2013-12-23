@@ -97,12 +97,12 @@ for ingress
 struct timeval flow_mod_array[100000];
 unsigned int src_array[100000];
 unsigned int dst_array[100000];
-int flow_mod_total = 1;
+int flow_mod_total = 5;
 char *start_sip = "10.0.0.1";
 char *start_dip = "10.0.0.1";
 int test_flags = 0; // 0 - dip 1 - priority 2 - vlanid
 int flowrate = 100;
-int iscomplex = false;
+int iscomplex = true;
 
 //*************************
 pthread_mutex_t lock;
@@ -401,30 +401,33 @@ void new_flow_mod_add(struct flowvisor_context *fv_ctx, unsigned int src, unsign
 	fm->idle_timeout = htons(60);
 	fm->hard_timeout = htons(0);
  	fm->priority = htons(50);
-	fm->buffer_id = htons(-1);
+	//fm->buffer_id = htons(OFPP_NONE);
 
         
 	// Populate the match fields
-        fm->match.in_port = htons(1); 
-	//fm->match.nw_src = htonl(src);
-	//fm->match.nw_dst = htonl(dst);
+        //fm->match.in_port = htons(1); 
+	fm->match.nw_src = htonl(src);
+	fm->match.nw_dst = htonl(dst);
 	
 	//fm->match.dl_vlan = htons(vlanid);
-	//fm->match.nw_proto = htons(17);
-	//fm->match.tp_src = htons(80);
-	//fm->match.tp_dst = htons(80);
+	fm->match.nw_proto = 6;
+	fm->match.tp_src = htons(80);
+	fm->match.tp_dst = htons(80);
 	//memcpy(fm->match.dl_src,"\x00\x15\x17\x7b\x92\x0a",6);
         //memcpy(fm->match.dl_dst,"\x00\x15\x17\x7b\x92\x0a",6);
 
-	//fm->match.dl_type = htons(0x0800);
+	fm->match.dl_type = htons(0x0800);
 	//printf ("[debug]: Src %d Dst %d\n",*src,*dst);
-	if (1)
+	if (iscomplex)
 	{
-            fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_NW_PROTO |OFPFW_TP_SRC|OFPFW_TP_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS);
+           // fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_NW_PROTO|OFPFW_TP_SRC|OFPFW_TP_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS);
+	   fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS);
+
+	    //fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS|OFPFW_IN_PORT);
         }
 	else
 	{
-            fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS);
+           fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_NW_PROTO|OFPFW_TP_SRC|OFPFW_TP_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS);
 	}	
 	// Populate the action
 	action_output = (struct ofp_action_output *)fm->actions;
@@ -661,7 +664,7 @@ handle_switch_identified(flowvisor_context * fv_ctx, int switchIndex)
 void init_guest(struct flowvisor_context *fv_ctx)
 {
 	struct guest g;
-	const char* name = "tcp:127.0.0.1";
+	const char* name = "tcp:127.0.0.1:6632";
 	fv_ctx->n_guests = 0;
 	fv_ctx->n_switches = 0;
 	fv_ctx->n_listeners = 0;
