@@ -102,7 +102,7 @@ char *start_sip = "10.0.0.1";
 char *start_dip = "10.0.0.1";
 int test_flags = 0; // 0 - dip 1 - priority 2 - vlanid
 int flowrate = 100;
-int iscomplex = true;
+int iscomplex = false;
 
 //*************************
 pthread_mutex_t lock;
@@ -405,7 +405,7 @@ void new_flow_mod_add(struct flowvisor_context *fv_ctx, unsigned int src, unsign
 
         
 	// Populate the match fields
-        //fm->match.in_port = htons(1); 
+        fm->match.in_port = htons(1); 
 	fm->match.nw_src = htonl(src);
 	fm->match.nw_dst = htonl(dst);
 	
@@ -421,13 +421,14 @@ void new_flow_mod_add(struct flowvisor_context *fv_ctx, unsigned int src, unsign
 	if (iscomplex)
 	{
            // fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_NW_PROTO|OFPFW_TP_SRC|OFPFW_TP_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS);
-	   fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS);
+	    fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS);
 
 	    //fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS|OFPFW_IN_PORT);
         }
 	else
 	{
-           fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_NW_PROTO|OFPFW_TP_SRC|OFPFW_TP_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS);
+            fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_NW_PROTO|OFPFW_TP_SRC|OFPFW_TP_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS|OFPFW_IN_PORT|OFPFW_NW_SRC_ALL);
+	   // fm->match.wildcards = htonl(OFPFW_ALL);
 	}	
 	// Populate the action
 	action_output = (struct ofp_action_output *)fm->actions;
