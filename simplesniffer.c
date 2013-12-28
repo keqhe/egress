@@ -7,17 +7,43 @@
 /* http://www.gnu.org/copyleft/gpl.html                                  */
 
 #include <pcap.h> 
-#include <string.h> 
 #include <stdlib.h> 
+#include <signal.h>
+#include <sched.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <errno.h>
+#include <sys/poll.h>
+#include <netinet/in_systm.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
+#include <net/ethernet.h>     /* the L2 protocols */
+#include <sys/time.h>
+#include <time.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <monetary.h>
+#include <locale.h>
+
 
 #define MAXBYTES2CAPTURE 2048 
 
-
+int hash[800];
+unsigned int globaldst[800];
+long int sec[800];
+long int msec[800];
+int c;
+void dump_stats();
 /* processPacket(): Callback function called by pcap_loop() everytime a packet */
 /* arrives to the network card. This function prints the captured raw data in  */
 /* hexadecimal.                                                                */
 void processPacket(u_char *arg, const struct pcap_pkthdr* pkthdr, const u_char * packet){ 
-
+ /*
  int i=0, *counter = (int *)arg; 
 
  printf("Packet Count: %d\n", ++(*counter)); 
@@ -25,7 +51,7 @@ void processPacket(u_char *arg, const struct pcap_pkthdr* pkthdr, const u_char *
  printf("Payload:\n"); 
  for (i=0; i<pkthdr->len; i++){ 
 
-    if ( isprint(packet[i]) ) /* If it is a printable character, print it */
+    if ( isprint(packet[i]) ) //If it is a printable character, print it
         printf("%c ", packet[i]); 
     else 
         printf(". "); 
@@ -33,9 +59,55 @@ void processPacket(u_char *arg, const struct pcap_pkthdr* pkthdr, const u_char *
      if( (i%16 == 0 && i!=0) || i==pkthdr->len-1 ) 
         printf("\n"); 
   } 
+ */
+   unsigned int sip,dip;
+   struct in_addr srcip,dstip;
+
+   memcpy((unsigned char*)&dip,packet+30,4);
+   //memcpy((unsigned char*)&sip,p+26,4);
+   //srcip.s_addr = sip;
+   dstip.s_addr = dip;
+   if (hash[ntohl(dip)%800])
+   {
+//      printf("Already recorded DIP \n");
+        return;
+   }
+   //gettimeofday(&cur_time, NULL);
+   hash[ntohl(dip)%800] = 1;
+   //printf(": [%s -> %s] \n", inet_ntoa(srcip),inet_ntoa(dstip));
+   globaldst[ntohl(dip)%800] = dip;
+   sec[ntohl(dip)%800] = pkthdr->ts.tv_sec; //cur_time.tv_sec;//s;
+   msec[ntohl(dip)%800] = pkthdr->ts.tv_usec;//cur_time.tv_usec; //usec;
+   c++;
+   //if (c % 50 == 0) {
+   //   printf("pfcount, DEBUG: %d\n", c);
+   //}
+   if (c >=767)
+   {
+        printf("pfcount, DEBUG: %d\n", c);
+        dump_stats();
+   }
+
  return; 
 } 
 
+/* ******************************** */
+
+void dump_stats()
+{
+  FILE *f = fopen("packet_timestamp.txt","w");
+  int i = 0;
+  printf("Start Print \n");
+  while (i++ < 800)
+  {
+        //printf("printing \n");
+        struct in_addr dst = {0};
+        dst.s_addr = globaldst[i];
+        fprintf(f, "dst: %s sec %ld usec %ld\n", inet_ntoa(dst), sec[i], msec[i]);
+  }
+  printf("Stop Print \n");
+  fclose(f);
+}
 
 
 /* main(): Main function. Opens network interface and calls pcap_loop() */
