@@ -97,12 +97,19 @@ for ingress
 struct timeval flow_mod_array[100000];
 unsigned int src_array[100000];
 unsigned int dst_array[100000];
-int flow_mod_total = 5;
+int flow_mod_total = 768;
+int flow_mod_count = 0;
 char *start_sip = "10.0.0.1";
-char *start_dip = "10.0.0.1";
+char *start_dip = "192.168.56.0";
 int test_flags = 0; // 0 - dip 1 - priority 2 - vlanid
-int flowrate = 100;
+int flowrate;
 int iscomplex = false;
+
+
+struct sockaddr_in sock_sip;
+struct sockaddr_in sock_dip;
+unsigned int global_src;
+unsigned int global_dst;
 
 //*************************
 pthread_mutex_t lock;
@@ -174,8 +181,11 @@ parse_options(flowvisor_context * fv_ctx, int argc, char *argv[])
                 break;
 
                 case 'P':
-                        set_pidfile(optarg);
-                        break;
+                        //set_pidfile(optarg);
+			
+			flowrate =  atoi(optarg);
+			printf ("Setting the rate to %d\n",flowrate);
+                         break;
 
                 case OPT_MAX_IDLE:
                         if (!strcmp(optarg, "permanent")) {
@@ -373,6 +383,7 @@ void new_flow_mod_add(struct flowvisor_context *fv_ctx, unsigned int src, unsign
 {
 	// get the switch info
 	//printf("[debug]: Inside new_flow_mod_add\n");
+	static int c = 0;
 	struct switch_ *sw = &fv_ctx->switches[0];
 	
 	// Declarations
@@ -383,13 +394,14 @@ void new_flow_mod_add(struct flowvisor_context *fv_ctx, unsigned int src, unsign
 	unsigned int sip,dip; 
 	unsigned int len = sizeof(struct ofp_flow_mod) + sizeof(struct ofp_action_output);
 	int i = 0;
-	printf ("[debug]: length: %d",len);
+	//printf ("[debug]: %d\n",++c);
 	// Create Flowmod msg
         buf = ofpbuf_new(len);
         ofpbuf_put_zeros(buf, len);
         fm = (struct ofp_flow_mod *)buf->data;
 
 	// Assign the of header
+	//printf("OFP_VERSION: %d\n", OFP_VERSION);
         fm->header.version = OFP_VERSION;
         fm->header.type = OFPT_FLOW_MOD;
 	//printf("[Debug]: Length %d\n",len);
@@ -398,21 +410,21 @@ void new_flow_mod_add(struct flowvisor_context *fv_ctx, unsigned int src, unsign
 
 	// Populate the flowmod params
         fm->command = htons(OFPFC_ADD);      
-	fm->idle_timeout = htons(60);
+	fm->idle_timeout = htons(0);
 	fm->hard_timeout = htons(0);
- 	fm->priority = htons(50);
-	//fm->buffer_id = htons(OFPP_NONE);
-
+ 	fm->priority = htons(prio);
+	fm->buffer_id = -1;
+	//fm->out_port = OFPP_NONE;
         
 	// Populate the match fields
-        fm->match.in_port = htons(1); 
-	fm->match.nw_src = htonl(src);
+        //fm->match.in_port = htons(1); 
+	//fm->match.nw_src = htonl(src);
 	fm->match.nw_dst = htonl(dst);
 	
 	//fm->match.dl_vlan = htons(vlanid);
-	fm->match.nw_proto = 6;
-	fm->match.tp_src = htons(80);
-	fm->match.tp_dst = htons(80);
+	//fm->match.nw_proto = 17;
+	//fm->match.tp_src = htons(9);
+	//fm->match.tp_dst = htons(9);
 	//memcpy(fm->match.dl_src,"\x00\x15\x17\x7b\x92\x0a",6);
         //memcpy(fm->match.dl_dst,"\x00\x15\x17\x7b\x92\x0a",6);
 
@@ -421,62 +433,69 @@ void new_flow_mod_add(struct flowvisor_context *fv_ctx, unsigned int src, unsign
 	if (iscomplex)
 	{
            // fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_NW_PROTO|OFPFW_TP_SRC|OFPFW_TP_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS);
-	    fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS);
+	    fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS);
 
 	    //fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS|OFPFW_IN_PORT);
         }
 	else
 	{
-            fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_NW_PROTO|OFPFW_TP_SRC|OFPFW_TP_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS|OFPFW_IN_PORT|OFPFW_NW_SRC_ALL);
-	   // fm->match.wildcards = htonl(OFPFW_ALL);
+            fm->match.wildcards = htonl(OFPFW_DL_VLAN|OFPFW_DL_SRC|OFPFW_DL_DST|OFPFW_NW_PROTO|OFPFW_TP_SRC|OFPFW_TP_DST|OFPFW_DL_VLAN_PCP|OFPFW_NW_TOS|OFPFW_NW_SRC_ALL|OFPFW_IN_PORT);
+	   //fm->match.wildcards = htonl(OFPFW_ALL);
 	}	
 	// Populate the action
 	action_output = (struct ofp_action_output *)fm->actions;
 	action_output->type = htons(OFPAT_OUTPUT);
 	action_output->len = htons(8);
-        action_output->port = htons(2);
+        action_output->port = htons(1);
 	action_output->max_len = htons(0);
 	// Send the flow mod
+	pthread_mutex_lock(&lock);
 	rconn_send(sw->rc,buf,NULL);
+	pthread_mutex_unlock(&lock);
 }
 
-void generate_flow_mod(flowvisor_context * fv_ctx)
+void *generate_flow_mod(void *param)
 {
+	struct flowvisor_context *fv_ctx = (struct flowvisor_context *)param;
 	struct timeval cur_time;
         unsigned int src,dst;
 	int i,j;
         union ip{
         unsigned int x;
-        char a[4];
+        u_char a[4];
         };
         union ip sip,dip;
-	struct sockaddr_in sock_sip;
+	uint16_t prio=1000;
+	/*struct sockaddr_in sock_sip;
 	struct sockaddr_in sock_dip;
 	inet_aton(start_sip,&sock_sip.sin_addr);
         inet_aton(start_dip,&sock_dip.sin_addr);
 	src = ntohl(sock_sip.sin_addr.s_addr);
-        dst = ntohl(sock_dip.sin_addr.s_addr);
-	printf ("debug]: Inserting rule for start src: %s, start dst %s\n",start_sip,start_dip);
+        dst = ntohl(sock_dip.sin_addr.s_addr);*/
+	printf ("debug]: Starting inserting rule for start src: %s, start dst %s\n",start_sip,start_dip);
+	i = flow_mod_count;
 	while(i<flow_mod_total)
 	{
-            new_flow_mod_add(fv_ctx,src,dst,50,0);
+            new_flow_mod_add(fv_ctx,global_src,global_dst,prio--,0);
 	    gettimeofday(&cur_time, NULL);
             flow_mod_array[i] = cur_time;
-            src_array[i] = htonl(src);
-            dst_array[i] = htonl(dst);
+            src_array[i] = htonl(global_src);
+            dst_array[i] = htonl(global_dst);
 	    i++;
-	    dst++;
+	    global_dst++;
 	    usleep(1000000/flowrate);
 	}
-    
+    	
         FILE *f;
         f = fopen("packet_mod_time.txt", "w");
         for (j = 0; j < flow_mod_total; j ++){
             sip.x = src_array[j];
             dip.x = dst_array[j];
-            fprintf(f,"src: %c.%c.%c.%c dst: %c.%c.%c.%c sec: %ld, usec: %ld\n",sip.a[0],sip.a[1],sip.a[2],sip.a[3],dip.a[0],dip.a[1],dip.a[2],dip.a[3], flow_mod_array[j].tv_sec, flow_mod_array[j].tv_usec);
+            fprintf(f,"src: %d.%d.%d.%d dst: %d.%d.%d.%d sec: %ld usec: %ld\n",sip.a[0],sip.a[1],sip.a[2],sip.a[3],dip.a[0],dip.a[1],dip.a[2],dip.a[3], flow_mod_array[j].tv_sec, flow_mod_array[j].tv_usec);
 	}
 	fclose(f);
+	printf("DEBUG: FLOW_MOD has been finished\n");	
+	//flow_mod_count = i + 1;
 	return;
 
 }
@@ -538,7 +557,7 @@ handle_switch(flowvisor_context * fv_ctx, int switchIndex)
         struct switch_ *sw = &fv_ctx->switches[switchIndex];
 
         // flowvisor_debug("handle_switch(switchID=%d)\n",sw->id);      // performance hog
-        packets_sent = rconn_packets_sent(sw->rc);
+        //packets_sent = rconn_packets_sent(sw->rc);
         //printf("handle_switch: packets_sent: %d\n", packets_sent);
         // Work out whether we've identified the switch yet
         if (sw->id >= 0)
@@ -548,13 +567,13 @@ handle_switch(flowvisor_context * fv_ctx, int switchIndex)
 
         rconn_run(sw->rc);              // update anything that needs updating
 
-        retval= (!rconn_is_alive(sw->rc) ? EOF          // YUCK! nested ?: stuff...
-                        : rconn_packets_sent(sw->rc) != packets_sent ? 0
-                                        : EAGAIN);
-        if(retval != EAGAIN)    // only print if it died; performance hog
-                flowvisor_debug("       return %d\n",retval);
+        //retval= (!rconn_is_alive(sw->rc) ? EOF          // YUCK! nested ?: stuff...
+        //                : rconn_packets_sent(sw->rc) != packets_sent ? 0
+        //                               : EAGAIN);
+        //if(retval != EAGAIN)    // only print if it died; performance hog
+        //        flowvisor_debug("       return %d\n",retval);
 	//printf("in handleswitch endi: retval: %d\n", retval);
-        return retval;
+        return 0;
 }
 
 static void
@@ -565,7 +584,9 @@ handle_switch_unidentified(flowvisor_context * fv_ctx, int switchIndex)
         struct switch_ *sw = &fv_ctx->switches[switchIndex];
 
         flowvisor_debug("handle_switch_unidentified(switchID=%d)\n",sw->id);
-        msg = rconn_recv(sw->rc);
+        pthread_mutex_lock(&lock);
+	msg = rconn_recv(sw->rc);
+	pthread_mutex_unlock(&lock);
         if(msg) {               // if we actually got something from the switch
                 flowvisor_debug("GOT MSG from SWITCH, MAN!\n");
 
@@ -642,23 +663,25 @@ handle_switch_identified(flowvisor_context * fv_ctx, int switchIndex)
 	static int round =0;
 	round++;
 	guest_sw = &g->guest_switches[switchIndex];
+	pthread_mutex_lock(&lock);
         msg = rconn_recv(sw->rc);
+	pthread_mutex_unlock(&lock);
         if(msg) {               // if we actually got something from the switch
-		//pthread_mutex_lock(&lock);
+		pthread_mutex_lock(&lock);
 		rconn_send(guest_sw->rc,ofpbuf_clone(msg),NULL);
-		//pthread_mutex_unlock(&lock);
+		pthread_mutex_unlock(&lock);
 		//flowvisor_log("SEND MSG to GUEST\n");
 	}
-        if (round == 5)
+        /*if (round == 5)
         {
             //printf("[debug]: Generating flow del \n");
             //new_flow_mod_flush();
         }
         if( round == 6)
         {
-            printf("[debug]: generating flow mod \n");
+            printf("[debug]: generating flow mod for rule no from %d \n", flow_mod_count);
             generate_flow_mod(fv_ctx);
-        }
+        }*/
 
 }
 
@@ -676,6 +699,13 @@ void init_guest(struct flowvisor_context *fv_ctx)
 	strncpy(g.vconn_name,name,MAX_VCONN_NAME_LEN);	
 	fv_ctx->guests[fv_ctx->n_guests++] = g;
 	flowvisor_log("Initialize the GUEST STATUS:%d\n", fv_ctx->n_guests);
+        printf("Initializing ips\n");
+	inet_aton(start_sip,&sock_sip.sin_addr);
+        inet_aton(start_dip,&sock_dip.sin_addr);
+
+        global_src = ntohl(sock_sip.sin_addr.s_addr);
+        global_dst = ntohl(sock_dip.sin_addr.s_addr);
+
 }
 
 /******************************************************
@@ -715,7 +745,9 @@ void* handle_guest(void * parm)
 		if(msg){
 			oh = msg->data;
 			if (oh->type != OFPT_PACKET_OUT && oh->type != OFPT_FLOW_MOD){
+			pthread_mutex_lock(&lock);
 			rconn_send(dst_sw->rc,msg,NULL);
+			pthread_mutex_unlock(&lock);
 			flowvisor_log("HANDLE_GUEST, SEND MSG to SWITCH\n");
 			}
 			
@@ -783,7 +815,7 @@ int main(int argc, char *argv[])
         /***********threads********************
 	*/
 	/* this variable is our reference to the second thread */
-	pthread_t listen_raw_thread;
+	pthread_t flow_mod_thread;
 	pthread_t handle_switches_thread;
 	pthread_t handle_guest_thread;
 	/*************paramterns*************
@@ -848,18 +880,19 @@ int main(int argc, char *argv[])
 		handle_guest(fv_ctx);
 		wait_on_all(fv_ctx);
 		poll_block();
-/*		round++;
-		if (round == 500)
+		round++;
+		if (round == 8)
+ 		{
+		 //  new_flow_mod_flush();
+		}
+		if (round == 10)
 		{
 		    printf("[debug]: Generating flow del \n");
-                    new_flow_mod_flush();
+                    rc = pthread_create(&flow_mod_thread, NULL, generate_flow_mod, (void *)fv_ctx);
+		    //new_flow_mod_flush();
 		}
-		if( round == 560)
-		{
-		    printf("[debug]: generating flow mod \n");
-		    generate_flow_mod(fv_ctx);
-		}
-*/
+		
+
 	}	
 	return 0;
 

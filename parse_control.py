@@ -2,101 +2,87 @@ from __future__ import division
 import os, sys, commands
 import time
 
-#expect two log files, recording when the packet_in message is received and when the flow_mod is sent by the C based controller
+
 
 flow_mod = 'packet_mod_time.txt'
-packet_in = 'packet_in_time.txt'
-packet_out = 'packet_out_time.txt'
+fst_out = 'packet_timestamp.txt'
 
-pcap_in = 'conn.in.pcap'
-pcap_out = 'conn.out.pcap'
+global flow_mod_timestamp
+flow_mod_timestamp = {}
 
-global flow_mode_timestamp
-flow_mode_timestamp = {}
-global packet_in_timestamp
-packet_in_timestamp = {}
-global packet_out_timestamp
-packet_out_timestamp = {}
+global fst_out_timestamp
+fst_out_timestamp = {}
 
 
-
-global pcap_pkt_in
-pcap_pkt_in = {}
-
-global pcap_pkt_out
-pcap_pkt_out = {}
-
-
-for line in open(packet_out):
+for line in open(flow_mod):
         line = line.strip()
-        words = line.split(' ')
-	srcip = words[0][4:]
-	dstip = words[1][4:]
-	#print srcip, dstip
-        key = (srcip, dstip) #
-	#print key
-        packet_out_timestamp[key] = (float(words[2]), float(words[3]))
-
-for line in open(packet_in):
-        line = line.strip()
-        words = line.split(' ')
-        srcip = words[0][4:]
-        dstip = words[1][4:]
-        key = (srcip, dstip) #
-	#print key
-        packet_in_timestamp[key] =  (float(words[2]), float(words[3]))
-
-for line in open(pcap_in,'r'):
-	line = line.strip()
-	if line[0] == '#':
+	words = line.split()
+	print words
+	srcip = words[1]
+	if srcip == '0.0.0.0':
 		continue
-	else:
-		words = line.split()
-		timestamp = words[0]
-		index = timestamp.find('.')
-		sec = timestamp[:index]
-		usec = timestamp[index+1:]
-		srcip = words[2]
-		dstip = words[4]
-		key = (srcip, dstip)
-		print key		
-		pcap_pkt_in[key] = (float(sec), float(usec))
+	dstip = words[3]
+	sec = float(words[5])
+	usec = float(words[7])
+	flow_mod_timestamp[(srcip, dstip)] = (sec, usec)
 
-
-for line in open(pcap_out,'r'):
+for line in open(fst_out):
         line = line.strip()
-        if line[0] == '#':
-                continue
-        else:
-		words = line.split()
-                timestamp = words[0]
-                index = timestamp.find('.')
-                sec = timestamp[:index]
-                usec = timestamp[index+1:]
-                srcip = words[2]
-                dstip = words[4]
-                key = (srcip, dstip)
-
-                pcap_pkt_out[key] = (float(sec), float(usec))
+        words = line.split()
+        #print words
+        dstip = words[1]
+	if dstip == '0.0.0.0':
+		continue
+        sec = float(words[3])
+        usec = float(words[5])
+        fst_out_timestamp[('10.0.0.1', dstip)] = (sec, usec)
 
 
-
-for key in packet_in_timestamp:
-	print key, 
-	print (key in pcap_pkt_in),
-	print (key in pcap_pkt_out),
-	print (key in packet_out_timestamp)
-w1 = open('pkt_in_out_delays.txt','w')
-
-for key in packet_in_timestamp:
+w1 = open('flow_delays.txt','w')
+count = 0
+min_delay = 99999999.0
+max_delay = -1.0
+total_delay = 0.0
+for key in flow_mod_timestamp:
 	try:
 		#print key, '%f' % packet_in_timestamp[key], pcap_pkt_in[key], '%f' % packet_out_timestamp[key],  pcap_pkt_out[key]
-	
-		w1.write('%s %s %f %f\n' % (key[0], key[1], (packet_in_timestamp[key][0] - pcap_pkt_in[key][0]) * 1000000 + (packet_in_timestamp[key][1] - pcap_pkt_in[key][1]), (pcap_pkt_out[key][0] - packet_out_timestamp[key][0]) * 1000000 + (pcap_pkt_out[key][1] - packet_out_timestamp[key][1])))
+		if key in fst_out_timestamp:
+			count += 1
+			delay = (fst_out_timestamp[key][0] - flow_mod_timestamp[key][0]) * 1000000 + (fst_out_timestamp[key][1] - flow_mod_timestamp[key][1])
+			w1.write('%s %s %f\n' % (key[0], key[1],delay/1000))
+			if min_delay > delay/1000:
+				min_delay = delay/1000
+			if max_delay < delay/1000:
+				max_delay = delay/1000
+			total_delay += delay/1000	 
 	except:
-		#print key
+#		#print key
 		pass
 w1.close()
 
+print 'total rules inserted successfully:' , count
+print 'total delay for these rules:', total_delay
+print 'avg rule insertion delay:', total_delay/count
+print 'max rule insertion delay:', max_delay
+print 'min rule insertion delay:', min_delay
 
+global number_val
+number_val = {}
 
+for line in open('flow_delays.txt'):
+	line = line.strip()
+	words = line.split(' ')
+	#print words
+	dstip = words[1]
+	byte = dstip.split('.')
+	number = (int(byte[2]) - 56) * 256 + (int(byte[3]) - 0)
+	number_val[number] = words
+
+keys = number_val.keys()
+keys.sort()
+
+w = open("sorted_flow_delay.txt","w")
+for key in keys:
+	w.write('%d %s %s %s\n' % ( key, number_val[key][0], number_val[key][1], number_val[key][2]))
+
+w.close()
